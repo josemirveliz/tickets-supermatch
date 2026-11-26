@@ -1,0 +1,104 @@
+{
+  "apiKey": "",
+  "zonaHoraria": "America/Montevideo",
+
+  "maxPartidos": 40,
+  "partidosHistorial": 10,
+  "minPartidosConDatos": 5,
+  "reservaConsultas": 5,
+
+  "probMinima": 0.70,
+  "cuotaMinimaPorSeleccion": 1.20,
+  "margenSeguridad": 0.05,
+  "pesoModelo": 0.65,
+  "pesoMercado": 0.50,
+  "pesoCasa": 0.80,
+  "avisoDiferenciaMercado": 0.10,
+  "decaimiento": 0.85,
+
+  "banca": {
+    "porcentajePorTicket": 1.5,
+    "fraccionKelly": 0.25,
+    "porcentajeMaximo": 3.0,
+    "limiteSemanalPorcentaje": 10.0
+  },
+
+  "oddsApi": {
+    "regiones": "eu,uk",
+    "ligas": {
+      "2": "soccer_uefa_champs_league",
+      "3": "soccer_uefa_europa_league",
+      "848": "soccer_uefa_europa_conference_league",
+      "39": "soccer_epl",
+      "140": "soccer_spain_la_liga",
+      "135": "soccer_italy_serie_a",
+      "78": "soccer_germany_bundesliga",
+      "61": "soccer_france_ligue_one",
+      "13": "soccer_conmebol_copa_libertadores",
+      "11": "soccer_conmebol_copa_sudamericana",
+      "128": "soccer_argentina_primera_division",
+      "71": "soccer_brazil_campeonato",
+      "268": "soccer_uruguay_primera_division",
+      "239": "soccer_colombia_primera_a",
+      "265": "soccer_chile_campeonato"
+    }
+  },
+
+  "footballData": {
+    "temporadaActual": "2627",
+    "temporadaAnterior": "2526",
+    "diasHistorial": 400,
+    "europa": [
+      { "codigo": "E0",  "pais": "England" },
+      { "codigo": "SP1", "pais": "Spain" },
+      { "codigo": "I1",  "pais": "Italy" },
+      { "codigo": "D1",  "pais": "Germany" },
+      { "codigo": "F1",  "pais": "France" },
+      { "codigo": "N1",  "pais": "Netherlands" },
+      { "codigo": "P1",  "pais": "Portugal" },
+      { "codigo": "B1",  "pais": "Belgium" },
+      { "codigo": "T1",  "pais": "Turkey" },
+      { "codigo": "SC0", "pais": "Scotland" },
+      { "codigo": "G1",  "pais": "Greece" }
+    ],
+    "extra": [
+      { "codigo": "ARG", "pais": "Argentina" },
+      { "codigo": "BRA", "pais": "Brazil" }
+    ]
+  },
+
+  "alias": {
+  },
+
+  "nombresSuperMatch": {
+    "Independ. Rivadavia": "Independiente Rivadavia de Mendoza"
+  },
+
+  "tickets": {
+    "goles":   { "cuotaObjetivo": 2.20, "maxSelecciones": 3 },
+    "corners": { "cuotaObjetivo": 2.20, "maxSelecciones": 3 },
+    "mixto":   { "cuotaObjetivo": 2.60, "maxSelecciones": 3 },
+    "seguro":  { "cuotaObjetivo": 1.60, "maxSelecciones": 2 }
+  },
+
+  "ligas": [
+    { "id": 2,    "nombre": "Champions League" },
+    { "id": 13,   "nombre": "Copa Libertadores" },
+    { "id": 11,   "nombre": "Copa Sudamericana" },
+    { "id": 268,  "nombre": "Primera Division Uruguay" },
+    { "id": 128,  "nombre": "Liga Profesional Argentina" },
+    { "id": 1032, "nombre": "Copa de la Liga (ARG)" },
+    { "id": 39,   "nombre": "Premier League" },
+    { "id": 140,  "nombre": "LaLiga" },
+    { "id": 135,  "nombre": "Serie A" },
+    { "id": 78,   "nombre": "Bundesliga" },
+    { "id": 61,   "nombre": "Ligue 1" },
+    { "id": 3,    "nombre": "Europa League" },
+    { "id": 71,   "nombre": "Brasileirao Serie A" },
+    { "id": 239,  "nombre": "Primera A Colombia" },
+    { "id": 265,  "nombre": "Primera Division Chile" },
+    { "id": 250,  "nombre": "Primera Division Paraguay" },
+    { "id": 242,  "nombre": "Liga Pro Ecuador" },
+    { "id": 281,  "nombre": "Liga 1 Peru" }
+  ]
+}
