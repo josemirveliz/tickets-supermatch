@@ -825,40 +825,48 @@ def correr(fecha: str, demo: bool = False, cfg: dict | None = None, forzar: bool
     else:
         liga_ids = [int(l["id"]) for l in cfg["ligas"]]
         orden = {lid: i for i, lid in enumerate(liga_ids)}
-        dia = fixtures_del_dia(cfg, fecha, res.api, forzar)
-        res.total_dia = len(dia)
-        # juntar resultados de ayer y hoy en el historial propio (sirve para la liga uruguaya y para el historial de apuestas)
-        store = load_store()
-        ligas = set(orden)
-        res.nuevos_guardados += guardar_terminados(store, dia, ligas)
-        h0 = hoy(cfg)
-        for d in ((h0 - timedelta(days=1)).isoformat(), h0.isoformat()):
-            if d != fecha:
-                try:
-                    res.nuevos_guardados += guardar_terminados(store, fixtures_del_dia(cfg, d, res.api), ligas)
-                except (BotError, requests.RequestException) as e:
-                    res.avisos.append(f"No se pudieron bajar los resultados del {d}: {e}")
-        save_store(store)
-
-        fx = [f for f in dia if int(f["league"]["id"]) in orden and f["fixture"]["status"]["short"] == "NS"]
-        fx.sort(key=lambda f: (orden[int(f["league"]["id"])], f["fixture"]["date"]))
-        fx = fx[: int(cfg["maxPartidos"])]
         fd = load_football_data(cfg, forzar)
+        import odds_api
+        consenso: dict = {}
         matches = []
-        for f in fx:
-            dt = datetime.fromisoformat(f["fixture"]["date"])
-            matches.append(Match(int(f["fixture"]["id"]), f"{f['league']['name']} ({f['league']['country']})", dt.strftime("%H:%M"),
-                      dt.date().isoformat(), f["league"]["country"], f["teams"]["home"]["name"], f["teams"]["away"]["name"],
-                      int(f["teams"]["home"]["id"]), int(f["teams"]["away"]["id"]), league_id=int(f["league"]["id"])))
-        # cuotas de muchas casas (The Odds API), para detectar valor real en más ligas
-        consenso = {}
+        store = load_store()
         try:
-            import odds_api
-            consenso, res.odds_api = odds_api.consenso(cfg, matches, forzar)
-            if consenso:
-                guardar_snapshot(consenso, cfg)
-        except Exception as e:
-            res.avisos.append(f"The Odds API no disponible: {e}")
+            dia = fixtures_del_dia(cfg, fecha, res.api, forzar)
+            res.total_dia = len(dia)
+            # juntar resultados de ayer y hoy en el historial propio (liga uruguaya e historial de apuestas)
+            ligas = set(orden)
+            res.nuevos_guardados += guardar_terminados(store, dia, ligas)
+            h0 = hoy(cfg)
+            for d in ((h0 - timedelta(days=1)).isoformat(), h0.isoformat()):
+                if d != fecha:
+                    try:
+                        res.nuevos_guardados += guardar_terminados(store, fixtures_del_dia(cfg, d, res.api), ligas)
+                    except (BotError, requests.RequestException):
+                        pass
+            save_store(store)
+            fx = [f for f in dia if int(f["league"]["id"]) in orden and f["fixture"]["status"]["short"] == "NS"]
+            fx.sort(key=lambda f: (orden[int(f["league"]["id"])], f["fixture"]["date"]))
+            fx = fx[: int(cfg["maxPartidos"])]
+            for f in fx:
+                dt = datetime.fromisoformat(f["fixture"]["date"])
+                matches.append(Match(int(f["fixture"]["id"]), f"{f['league']['name']} ({f['league']['country']})", dt.strftime("%H:%M"),
+                          dt.date().isoformat(), f["league"]["country"], f["teams"]["home"]["name"], f["teams"]["away"]["name"],
+                          int(f["teams"]["home"]["id"]), int(f["teams"]["away"]["id"]), league_id=int(f["league"]["id"])))
+            try:
+                consenso, res.odds_api = odds_api.consenso(cfg, matches, forzar)
+            except Exception as e:
+                res.avisos.append(f"The Odds API no disponible: {e}")
+        except (BotError, requests.RequestException) as e:
+            # API-Football caído o suspendido: tomo los partidos de The Odds API (no depende de API-Football)
+            res.avisos.append("API-Football no está disponible, así que tomo los partidos de The Odds API.")
+            partidos, res.odds_api = odds_api.partidos_del_dia(cfg, fecha, forzar)
+            res.total_dia = len(partidos)
+            for p in partidos[: int(cfg["maxPartidos"])]:
+                matches.append(Match(p["id"], p["liga"], p["hora"], p["dia"], p["pais"], p["home"], p["away"],
+                                     p["home_id"], p["away_id"], league_id=p.get("league_id", 0)))
+                consenso[p["id"]] = p["probs"]
+        if consenso:
+            guardar_snapshot(consenso, cfg)
         cache_rows: dict[int, tuple] = {}
         for m in matches:
             fuentes = []

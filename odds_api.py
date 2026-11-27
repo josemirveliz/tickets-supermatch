@@ -36,12 +36,12 @@ def _cache_path(sport: str):
 def _fetch_sport(sport: str, cfg: dict, forzar: bool, info: dict) -> list[dict]:
     """Baja (o lee de cache) los partidos con cuotas de una liga. Cache de 6 horas."""
     f = _cache_path(sport)
-    if f.exists() and not forzar and time.time() - f.stat().st_mtime < 6 * 3600:
+    if f.exists() and not forzar and time.time() - f.stat().st_mtime < 12 * 3600:
         return json.loads(f.read_text(encoding="utf-8"))
     try:
         r = requests.get(f"{BASE}/sports/{sport}/odds", params={
             "apiKey": _key(), "regions": cfg.get("oddsApi", {}).get("regiones", "eu,uk"),
-            "markets": "h2h,totals,btts", "oddsFormat": "decimal"}, timeout=30)
+            "markets": "h2h,totals", "oddsFormat": "decimal"}, timeout=30)
         if r.status_code in (401, 403):
             info["error"] = "La ODDS_API_KEY no es válida o se quedó sin consultas."
             return []
@@ -118,6 +118,52 @@ def _consenso_partido(ev: dict) -> dict:
         out["btts_si"] = (1 / psi if psi > 0 else None, psi)
         out["btts_no"] = (1 / pno if pno > 0 else None, pno)
     return dict(home=home, away=away, probs=out, commence=ev.get("commence_time", ""))
+
+
+# nombre lindo de cada liga de The Odds API (para mostrar cuando no hay API-Football)
+SPORT_NOMBRES = {
+    "soccer_uefa_champs_league": "Champions League", "soccer_uefa_europa_league": "Europa League",
+    "soccer_uefa_europa_conference_league": "Conference League", "soccer_epl": "Premier League",
+    "soccer_spain_la_liga": "LaLiga", "soccer_italy_serie_a": "Serie A", "soccer_germany_bundesliga": "Bundesliga",
+    "soccer_france_ligue_one": "Ligue 1", "soccer_conmebol_copa_libertadores": "Libertadores",
+    "soccer_conmebol_copa_sudamericana": "Sudamericana", "soccer_argentina_primera_division": "Liga Argentina",
+    "soccer_brazil_campeonato": "Brasileirão", "soccer_uruguay_primera_division": "Primera Uruguay",
+    "soccer_colombia_primera_a": "Primera A Colombia", "soccer_chile_campeonato": "Primera Chile",
+}
+
+
+def partidos_del_dia(cfg: dict, fecha: str, forzar: bool = False) -> tuple[list, dict]:
+    """Lista de partidos del día SACADA de The Odds API (cuando API-Football no está disponible).
+    Cada partido: {id, liga, hora, dia, pais, home, away, home_id, away_id, probs}."""
+    import hashlib
+    info: dict = {"restantes": None, "ligas": 0}
+    if not disponible():
+        return [], info
+    tz = __import__("zoneinfo").ZoneInfo(cfg.get("zonaHoraria", "America/Montevideo"))
+    mapa = cfg.get("oddsApi", {}).get("ligas", {})
+    partidos = []
+    for lid, sport in mapa.items():
+        data = _fetch_sport(sport, cfg, forzar, info)
+        if not data:
+            continue
+        info["ligas"] += 1
+        for ev in data:
+            try:
+                dt = __import__("datetime").datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00")).astimezone(tz)
+            except (ValueError, KeyError):
+                continue
+            if dt.date().isoformat() != fecha:
+                continue
+            c = _consenso_partido(ev)
+            probs = {k: (cu, p) for k, (cu, p) in c["probs"].items() if cu}
+            if not probs:
+                continue
+            mid = int(hashlib.md5(f"{c['home']}|{c['away']}|{fecha}".encode()).hexdigest()[:8], 16)
+            partidos.append(dict(id=mid, liga=SPORT_NOMBRES.get(sport, sport), hora=dt.strftime("%H:%M"), dia=fecha,
+                                 pais="", home=c["home"], away=c["away"], home_id=mid, away_id=mid + 1,
+                                 league_id=int(lid) if str(lid).isdigit() else 0, probs=probs))
+    partidos.sort(key=lambda m: m["hora"])
+    return partidos, info
 
 
 def consenso(cfg: dict, matches: list, forzar: bool = False) -> tuple[dict, dict]:

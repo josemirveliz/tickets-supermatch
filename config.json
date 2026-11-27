@@ -24,7 +24,7 @@
   },
 
   "oddsApi": {
-    "regiones": "eu,uk",
+    "regiones": "eu",
     "ligas": {
       "2": "soccer_uefa_champs_league",
       "3": "soccer_uefa_europa_league",
