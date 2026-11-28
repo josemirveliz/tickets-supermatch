@@ -163,9 +163,9 @@ def store_rows(store: dict, team_id: int) -> list[dict]:
     rows = []
     for m in store.values():
         if m["home_id"] == team_id:
-            rows.append(dict(date=datetime.fromisoformat(m["date"]), home=True, gf=m["hg"], ga=m["ag"], xgf=None, xga=None, cf=None, ca=None))
+            rows.append(dict(date=datetime.fromisoformat(m["date"]), home=True, gf=m["hg"], ga=m["ag"], xgf=None, xga=None, cf=None, ca=None, kf=None, ka=None))
         elif m["away_id"] == team_id:
-            rows.append(dict(date=datetime.fromisoformat(m["date"]), home=False, gf=m["ag"], ga=m["hg"], xgf=None, xga=None, cf=None, ca=None))
+            rows.append(dict(date=datetime.fromisoformat(m["date"]), home=False, gf=m["ag"], ga=m["hg"], xgf=None, xga=None, cf=None, ca=None, kf=None, ka=None))
     rows.sort(key=lambda r: r["date"], reverse=True)
     return rows
 
@@ -224,6 +224,7 @@ def read_fd_csv(path: Path, cut: datetime, con_resultado: bool = True):
 
     iD, iDiv, iH, iA = col("Date"), col("Div", "League"), col("HomeTeam", "Home"), col("AwayTeam", "Away")
     iHG, iAG, iHC, iAC, iHX, iAX = col("FTHG", "HG"), col("FTAG", "AG"), col("HC"), col("AC"), col("HxG"), col("AxG")
+    iHY, iAY, iHR, iAR = col("HY"), col("AY"), col("HR"), col("AR")   # tarjetas amarillas y rojas
     odds_cols = {"H": ("AvgCH", "AvgH"), "D": ("AvgCD", "AvgD"), "A": ("AvgCA", "AvgA"),
                  "O25": ("AvgC>2.5", "Avg>2.5"), "U25": ("AvgC<2.5", "Avg<2.5")}
     odds_ix = {k: [col(n) for n in v] for k, v in odds_cols.items()}
@@ -246,10 +247,13 @@ def read_fd_csv(path: Path, cut: datetime, con_resultado: bool = True):
                         odds[k] = v
                         break
             hc, ac = _num(c, iHC), _num(c, iAC)
+            hy, ay = _num(c, iHY), _num(c, iAY)
+            hk = None if hy is None or ay is None else int(hy) + int(_num(c, iHR) or 0)   # tarjetas del local (amarillas+rojas)
+            ak = None if hy is None or ay is None else int(ay) + int(_num(c, iAR) or 0)   # tarjetas del visitante
             yield dict(date=dt, div=c[iDiv].strip() if iDiv >= 0 else "", home=c[iH].strip(), away=c[iA].strip(),
                        hg=None if hg is None else int(hg), ag=None if ag is None else int(ag),
                        hc=None if hc is None or ac is None else int(hc), ac=None if hc is None or ac is None else int(ac),
-                       hxg=_num(c, iHX), axg=_num(c, iAX), odds=odds)
+                       hk=hk, ak=ak, hxg=_num(c, iHX), axg=_num(c, iAX), odds=odds)
         except (ValueError, IndexError):
             continue
 
@@ -266,8 +270,10 @@ class FootballData:
 
 def team_row(m: dict, home: bool) -> dict:
     if home:
-        return dict(date=m["date"], home=True, gf=m["hg"], ga=m["ag"], xgf=m["hxg"], xga=m["axg"], cf=m["hc"], ca=m["ac"])
-    return dict(date=m["date"], home=False, gf=m["ag"], ga=m["hg"], xgf=m["axg"], xga=m["hxg"], cf=m["ac"], ca=m["hc"])
+        return dict(date=m["date"], home=True, gf=m["hg"], ga=m["ag"], xgf=m["hxg"], xga=m["axg"], cf=m["hc"], ca=m["ac"],
+                    kf=m.get("hk"), ka=m.get("ak"))
+    return dict(date=m["date"], home=False, gf=m["ag"], ga=m["hg"], xgf=m["axg"], xga=m["hxg"], cf=m["ac"], ca=m["hc"],
+                kf=m.get("ak"), ka=m.get("hk"))
 
 
 _FD_MEMO: dict = {}
@@ -424,6 +430,9 @@ class Fuerza:
     c_favor: float
     c_contra: float
     usa_xg: bool
+    nt: int = 0           # cuántos partidos con dato de tarjetas
+    t_self: float = 2.0   # tarjetas que suele recibir el equipo
+    t_opp: float = 2.0    # tarjetas que suele recibir el rival
 
 
 def _wavg(rows: list[dict], fn, decay: float):
@@ -466,7 +475,9 @@ def fuerza(rows: list[dict], de_local: bool, cfg: dict) -> Fuerza:
     de, _ = stat(_goles_defensa, 1.35)
     cf, nc = stat(lambda r: r["cf"], 5.0)
     ca, _ = stat(lambda r: r["ca"], 5.0)
-    return Fuerza(n, at, de, nc, cf, ca, any(r["xgf"] is not None for r in rows))
+    ts, nt = stat(lambda r: r.get("kf"), 2.0)
+    to, _ = stat(lambda r: r.get("ka"), 2.0)
+    return Fuerza(n, at, de, nc, cf, ca, any(r["xgf"] is not None for r in rows), nt, ts, to)
 
 
 # Mercados y líneas que ofrece Super Match (revisado en su página, nov-2026)
@@ -478,6 +489,8 @@ COMBO_LINEAS = (2.5, 3.5, 4.5)
 # y la app te muestra la que coincide con la de Super Match.
 CORNERS_LINEAS = (7.5, 8.5, 9.5, 10.5, 11.5, 12.5)
 CORNERS_EQUIPO = (2.5, 3.5, 4.5, 5.5, 6.5)
+# Tarjetas (amarillas + rojas) de todo el partido; Super Match ofrece una sola línea por partido
+TARJETAS_LINEAS = (2.5, 3.5, 4.5, 5.5)
 
 
 def modelo(h_rows: list[dict], a_rows: list[dict], cfg: dict, con_corners: bool = True) -> dict:
@@ -514,6 +527,7 @@ def modelo(h_rows: list[dict], a_rows: list[dict], cfg: dict, con_corners: bool 
     for l in GOLES_MENOS:
         P[f"goles_menos_{l}"] = mix(1 - p_over(tot, l), rate(emp_g, l, False))
     P["btts_si"] = mix(pbtts, eb)
+    P["btts_no"] = 1 - P["btts_si"]
     # "Portería a cero": local_porteria_no = el local recibe gol (= el visitante marca)
     P["local_porteria_si"], P["local_porteria_no"] = pa[0], 1 - pa[0]
     P["visita_porteria_si"], P["visita_porteria_no"] = ph[0], 1 - ph[0]
@@ -553,7 +567,33 @@ def modelo(h_rows: list[dict], a_rows: list[dict], cfg: dict, con_corners: bool 
         for l in CORNERS_EQUIPO:
             P[f"local_corners_mas_{l}"], P[f"local_corners_menos_{l}"] = p_over(dh, l), 1 - p_over(dh, l)
             P[f"visita_corners_mas_{l}"], P[f"visita_corners_menos_{l}"] = p_over(da, l), 1 - p_over(da, l)
-    return dict(probs=P, lh=lh, la=la, xc=xc, p1=p1, px=px, p2=p2, xg=h.usa_xg or a.usa_xg, n=(h.n, a.n))
+    # Tarjetas de todo el partido (muy ligadas al árbitro y al estilo del cruce)
+    xt = None
+    if con_corners and h.nt >= min_n and a.nt >= min_n:
+        xt = (h.t_self + a.t_opp) / 2 + (a.t_self + h.t_opp) / 2
+        dtk = negbin(xt, 1.25, 25)
+        emp_t = [r["kf"] + r["ka"] for r in h_rows + a_rows if r.get("kf") is not None and r.get("ka") is not None]
+        for l in TARJETAS_LINEAS:
+            P[f"tarjetas_mas_{l}"] = mix(p_over(dtk, l), rate(emp_t, l, True))
+            P[f"tarjetas_menos_{l}"] = mix(1 - p_over(dtk, l), rate(emp_t, l, False))
+    # Goles del primer tiempo (~45% del juego): Más/Menos de 0.5 y 1.5
+    ph1, pa1 = pois(lh * 0.45, 8), pois(la * 0.45, 8)
+    tot1 = [0.0] * 17
+    for i in range(9):
+        for j in range(9):
+            tot1[i + j] += ph1[i] * pa1[j]
+    for l in (0.5, 1.5):
+        P[f"pt_mas_{l}"] = p_over(tot1, l)
+    for l in (1.5, 2.5):
+        P[f"pt_menos_{l}"] = 1 - p_over(tot1, l)
+    # Hándicap (margen de goles) a partir de la matriz del marcador
+    P["hcap_loc_g2"] = S(lambda i, j: i - j >= 2)
+    P["hcap_loc_g3"] = S(lambda i, j: i - j >= 3)
+    P["hcap_loc_m1"] = S(lambda i, j: i - j >= -1)
+    P["hcap_vis_g2"] = S(lambda i, j: j - i >= 2)
+    P["hcap_vis_g3"] = S(lambda i, j: j - i >= 3)
+    P["hcap_vis_m1"] = S(lambda i, j: j - i >= -1)
+    return dict(probs=P, lh=lh, la=la, xc=xc, xt=xt, p1=p1, px=px, p2=p2, xg=h.usa_xg or a.usa_xg, n=(h.n, a.n))
 
 
 def evaluar(clave: str, hg, ag, hc=None, ac=None):
@@ -579,6 +619,8 @@ def evaluar(clave: str, hg, ag, hc=None, ac=None):
     return {"btts_si": hg > 0 and ag > 0, "btts_no": not (hg > 0 and ag > 0), "dc_1x": hg >= ag, "dc_x2": ag >= hg,
             "dc_12": hg != ag, "gana_local": hg > ag, "gana_visita": ag > hg, "empate": hg == ag,
             "local_porteria_si": ag == 0, "local_porteria_no": ag > 0, "visita_porteria_si": hg == 0, "visita_porteria_no": hg > 0,
+            "hcap_loc_g2": hg - ag >= 2, "hcap_loc_g3": hg - ag >= 3, "hcap_loc_m1": hg - ag >= -1,
+            "hcap_vis_g2": ag - hg >= 2, "hcap_vis_g3": ag - hg >= 3, "hcap_vis_m1": ag - hg >= -1,
             "rango_0-1": t <= 1, "rango_2-3": 2 <= t <= 3, "rango_4-5": 4 <= t <= 5, "rango_6+": t >= 6}.get(clave)
 
 
@@ -614,11 +656,27 @@ def etiqueta(clave: str, HN: str, AN: str) -> tuple[str, str, str]:
         l = num(m.group(3))
         op = f"{'Más' if m.group(1) == 'mas' else 'Menos'} De {l} Y {'Sí' if m.group(2) == 'si' else 'No'}"
         return "Goles", f"Total y ambos equipos marcan ( {l} ) → {op}", "Goles"
+    m = re.match(r"tarjetas_(mas|menos)_([\d.]+)$", clave)
+    if m:
+        l = num(m.group(2))
+        op = f"{'Más' if m.group(1) == 'mas' else 'Menos'} De {l}"
+        return "Tarjetas", f"Total tarjetas ( {l} ) → {op}", "Tarjetas/Corners"
+    m = re.match(r"pt_(mas|menos)_([\d.]+)$", clave)
+    if m:
+        l = num(m.group(2))
+        op = f"{'Más' if m.group(1) == 'mas' else 'Menos'} De {l}"
+        return "Goles", f"1º Mitad - total ( {l} ) → {op}", "1ª mitad/ 2ª mitad"
     if clave.startswith("rango_"):
         return "Goles", f"Rango de goles → {clave[6:]}", "Otro"
     return {
-        "btts_si": ("Goles", "Qué equipo marca → Ambos Equipos", "Otro"),
-        "btts_no": ("Goles", "Ambos equipos anotan: No", "Otro"),
+        "btts_si": ("Goles", "Ambos equipos marcan → Sí", "Otro"),
+        "btts_no": ("Goles", "Ambos equipos marcan → No", "Otro"),
+        "hcap_loc_g2": ("Hándicap", f"Hándicap ( 0:1 ) → {HN}", "Hándicap"),
+        "hcap_loc_g3": ("Hándicap", f"Hándicap ( 0:2 ) → {HN}", "Hándicap"),
+        "hcap_loc_m1": ("Hándicap", f"Hándicap ( 2:0 ) → {HN}", "Hándicap"),
+        "hcap_vis_g2": ("Hándicap", f"Hándicap ( 1:0 ) → {AN}", "Hándicap"),
+        "hcap_vis_g3": ("Hándicap", f"Hándicap ( 2:0 ) → {AN}", "Hándicap"),
+        "hcap_vis_m1": ("Hándicap", f"Hándicap ( 0:2 ) → {AN}", "Hándicap"),
         "local_porteria_si": ("Goles", f"{HN} Portería a cero → Sí", "Otro"),
         "local_porteria_no": ("Goles", f"{HN} Portería a cero → No", "Otro"),
         "visita_porteria_si": ("Goles", f"{AN} Portería a cero → Sí", "Otro"),
@@ -718,7 +776,7 @@ def _candidato(res, m, clave, prob, p_mod, p_mer, cuota_mer):
         aviso = f"El modelo dice {p_mod * 100:.0f}% y el mercado {p_mer * 100:.0f}%: tomalo con cuidado"
     res.candidatos.append(dict(
         sel_id=f"{m.id}|{clave}", match_id=m.id, clave=clave, dia=m.dia, partido=f"{HN} vs {AN}", buscar=HN,
-        liga=m.liga, hora=m.hora, categoria=cat, mercado=txt, pestana=pestana, linea_unica=cat == "Corners",
+        liga=m.liga, hora=m.hora, categoria=cat, mercado=txt, pestana=pestana, linea_unica=cat in ("Corners", "Tarjetas", "Hándicap"),
         prob=prob, prob_modelo=p_mod, prob_mercado=p_mer, cuota_mercado=cuota_mer,
         cuota=1 / prob, aviso=aviso, home_fd=m.home_fd, away_fd=m.away_fd, home_id=m.home_id, away_id=m.away_id))
 
@@ -807,7 +865,7 @@ def demo_data(cfg):
         att, de = 0.8 + rnd.random() * 1.2, 0.7 + rnd.random() * 1.1
         catt, cdef = 3.5 + rnd.random() * 3.5, 3.5 + rnd.random() * 3
         rows[i + 1] = [dict(date=hoy - timedelta(days=7 * k), home=k % 2 == 0, gf=samp(att), ga=samp(de), xgf=None, xga=None,
-                            cf=samp(catt), ca=samp(cdef)) for k in range(10)]
+                            cf=samp(catt), ca=samp(cdef), kf=samp(2.0), ka=samp(2.1)) for k in range(10)]
     dia = hoy.date().isoformat()
     matches = [Match(1000 + i, "Liga Demo (ficticia)", f"{14 + i:02d}:00", dia, "Demo", names[2 * i], names[2 * i + 1], 2 * i + 1, 2 * i + 2)
                for i in range(8)]

@@ -1,6 +1,4 @@
 streamlit>=1.50
 requests
 pandas
-# redeploy
 tzdata
-# redeploy limpio
