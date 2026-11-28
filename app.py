@@ -18,13 +18,13 @@ import storage
 import supermatch as SMP
 
 SUPERMATCH_URL = "https://www.supermatch.com.uy/"
-COLORES = {"Goles": "#2563eb", "Corners": "#b45309", "Resultado": "#7c3aed"}
+COLORES = {"Goles": "#2563eb", "Corners": "#b45309", "Resultado": "#7c3aed", "Tarjetas": "#dc2626", "Hándicap": "#0891b2"}
 def pista(l: dict) -> str:
     """Dónde está la jugada dentro del partido en Super Match."""
     grupo, _, opcion = l["mercado"].partition(" → ")
     txt = f"En el partido abrí la pestaña **{l.get('pestana', 'Goles')}**, buscá **{grupo}** y tocá **{opcion or grupo}**."
     if l.get("linea_unica"):
-        txt += (" Super Match ofrece **una sola línea** de córners por partido: si la que ves no es esta, "
+        txt += (" Super Match suele ofrecer **una sola línea** de este mercado por partido: si la que ves no es esta, "
                 "salteala y buscá en la app la jugada con la línea que sí aparece.")
     return txt
 
@@ -655,7 +655,8 @@ with T_ARMA:
     st.caption("Todas las jugadas analizadas. Escribí la cuota de Super Match en la tabla y ordená por **valor** "
                "para encontrar las que pagan más de lo que valen. Marcá las que quieras y se arma tu ticket abajo.")
     f1, f2, f3 = st.columns([2, 1.2, 1.2])
-    cats = f1.multiselect("Tipo", ["Goles", "Corners", "Resultado"], default=["Goles", "Corners", "Resultado"])
+    _tipos = ["Goles", "Corners", "Resultado", "Tarjetas", "Hándicap"]
+    cats = f1.multiselect("Tipo", _tipos, default=_tipos)
     pmin2 = f2.slider("Prob. mínima", 0.40, 0.90, 0.55, 0.05, format="%.2f", key="pmin_libre")
     orden = f3.selectbox("Ordenar por", ["Partido", "Más probables", "Más valor (con cuota cargada)"])
     cand = [c for c in res.candidatos if prob_final(c) >= pmin2 and c["categoria"] in cats]
